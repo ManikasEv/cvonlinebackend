@@ -67,6 +67,13 @@ app.options('*', (req, res) => {
   return res.status(200).end();
 });
 
+// Stripe webhook needs raw body - BEFORE json parsing
+app.post('/api/payment/webhook', express.raw({ type: 'application/json' }), async (req, res, next) => {
+  // This will be handled by the payment routes
+  next();
+});
+
+// Parse JSON for all other routes
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 

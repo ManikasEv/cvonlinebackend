@@ -150,7 +150,7 @@ router.post('/create-subscription', async (req, res) => {
  * POST /api/payment/webhook
  * Stripe webhook to handle subscription events
  */
-router.post('/webhook', express.raw({ type: 'application/json' }), async (req, res) => {
+router.post('/webhook', async (req, res) => {
   console.log('\n========================================');
   console.log('🪝 [WEBHOOK] Stripe webhook received');
   console.log('========================================');
