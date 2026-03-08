@@ -150,9 +150,10 @@ router.post('/create-subscription', async (req, res) => {
  * POST /api/payment/webhook
  * Stripe webhook to handle subscription events
  */
-router.post('/webhook', async (req, res) => {
+router.post('/webhook', express.raw({ type: 'application/json' }), async (req, res) => {
   console.log('\n========================================');
   console.log('🪝 [WEBHOOK] Stripe webhook received');
+  console.log('📊 [WEBHOOK] Body type:', typeof req.body, '- Is Buffer:', Buffer.isBuffer(req.body));
   console.log('========================================');
   
   const sig = req.headers['stripe-signature'];
