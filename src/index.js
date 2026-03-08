@@ -2,6 +2,9 @@ import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import { clerkMiddleware } from '@clerk/express';
+import authRoutes from './routes/auth.routes.js';
+import cvRoutes from './routes/cv.routes.js';
+import paymentRoutes from './routes/payment.routes.js';
 
 dotenv.config();
 
@@ -32,11 +35,7 @@ app.use('/api', clerkMiddleware({
   secretKey: process.env.CLERK_SECRET_KEY
 }));
 
-// Import and use routes
-import authRoutes from './routes/auth.routes.js';
-import cvRoutes from './routes/cv.routes.js';
-import paymentRoutes from './routes/payment.routes.js';
-
+// API routes
 app.use('/api/auth', authRoutes);
 app.use('/api/cvs', cvRoutes);
 app.use('/api/payment', paymentRoutes);
@@ -49,12 +48,5 @@ app.use((err, req, res, next) => {
   console.error('Server error:', err);
   res.status(500).json({ error: 'Internal server error', message: err.message });
 });
-
-if (process.env.NODE_ENV !== 'production') {
-  const PORT = process.env.PORT || 3000;
-  app.listen(PORT, () => {
-    console.log(`🚀 Server is running on http://localhost:${PORT}`);
-  });
-}
 
 export default app;
