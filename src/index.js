@@ -13,11 +13,18 @@ dotenv.config();
 
 const app = express();
 
-// Middleware
+// CORS Configuration for Vercel
 app.use(cors({
   origin: ['https://cvonlinestripeclerk.netlify.app', 'http://localhost:5173'],
-  credentials: true
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  exposedHeaders: ['Content-Length', 'Content-Type'],
+  maxAge: 86400 // 24 hours
 }));
+
+// Handle preflight requests explicitly
+app.options('*', cors());
 
 // Special handling for Stripe webhook (needs raw body)
 app.use('/api/payment/webhook', express.raw({ type: 'application/json' }));
