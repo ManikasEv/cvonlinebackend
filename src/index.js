@@ -117,6 +117,12 @@ app.use('/api', (req, res, next) => {
     return next();
   }
   
+  // Skip Clerk for Stripe webhook
+  if (req.path === '/payment/webhook') {
+    console.log('✅ [AUTH MIDDLEWARE] Webhook request - skipping authentication');
+    return next();
+  }
+  
   console.log('🔍 [AUTH MIDDLEWARE] Checking Clerk authentication...');
   
   return clerkMiddleware({
