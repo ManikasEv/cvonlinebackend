@@ -12,11 +12,10 @@ import paymentRoutes from './routes/payment.routes.js';
 dotenv.config();
 
 const app = express();
-const PORT = process.env.PORT || 3000;
 
 // Middleware
 app.use(cors({
-  origin: process.env.CLIENT_URL || 'http://localhost:5173',
+  origin: ['https://cvonlinestripeclerk.netlify.app', 'http://localhost:5173'],
   credentials: true
 }));
 
@@ -27,18 +26,38 @@ app.use('/api/payment/webhook', express.raw({ type: 'application/json' }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
+// Initialize database (for serverless, this happens on each request)
+let dbInitialized = false;
+app.use(async (req, res, next) => {
+  if (!dbInitialized) {
+    try {
+      console.log('🔄 Initializing database...');
+      await initializeDatabase();
+      dbInitialized = true;
+      console.log('✅ Database initialized');
+    } catch (error) {
+      console.error('❌ Database initialization failed:', error);
+    }
+  }
+  next();
+});
+
 // Clerk authentication middleware
 app.use(clerkAuth);
+
+// Health check endpoint (before auth)
+app.get('/', (req, res) => {
+  res.status(200).json({ status: 'ok', message: 'CV Creator API is running' });
+});
+
+app.get('/health', (req, res) => {
+  res.status(200).json({ status: 'ok', message: 'Server is running' });
+});
 
 // Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/cvs', cvRoutes);
 app.use('/api/payment', paymentRoutes);
-
-// Health check endpoint
-app.get('/health', (req, res) => {
-  res.status(200).json({ status: 'ok', message: 'Server is running' });
-});
 
 // 404 handler
 app.use((req, res) => {
@@ -48,25 +67,16 @@ app.use((req, res) => {
 // Error handler
 app.use((err, req, res, next) => {
   console.error('Server error:', err);
-  res.status(500).json({ error: 'Internal server error' });
+  res.status(500).json({ error: 'Internal server error', message: err.message });
 });
 
-// Initialize database and start server
-async function startServer() {
-  try {
-    console.log('🔄 Initializing database...');
-    await initializeDatabase();
-    
-    app.listen(PORT, () => {
-      console.log(`🚀 Server is running on http://localhost:${PORT}`);
-      console.log(`📊 Database connected successfully`);
-      console.log(`🔐 Clerk authentication enabled`);
-      console.log(`💳 Stripe payment integration ready`);
-    });
-  } catch (error) {
-    console.error('❌ Failed to start server:', error);
-    process.exit(1);
-  }
+// For local development
+if (process.env.NODE_ENV !== 'production') {
+  const PORT = process.env.PORT || 3000;
+  app.listen(PORT, () => {
+    console.log(`🚀 Server is running on http://localhost:${PORT}`);
+  });
 }
 
-startServer();
+// Export for Vercel
+export default app;
