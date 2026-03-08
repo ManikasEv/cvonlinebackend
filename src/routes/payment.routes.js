@@ -162,6 +162,7 @@ router.post('/webhook', async (req, res) => {
 
   try {
     console.log('🔐 [WEBHOOK] Verifying webhook signature...');
+    console.log('🔑 [WEBHOOK] Webhook secret configured:', process.env.STRIPE_WEBHOOK_SECRET ? 'YES (starts with ' + process.env.STRIPE_WEBHOOK_SECRET.substring(0, 10) + '...)' : 'NO - MISSING!');
     event = stripe.webhooks.constructEvent(
       req.body,
       sig,
