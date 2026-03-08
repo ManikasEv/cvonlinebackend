@@ -1,7 +1,6 @@
 import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
-import { initializeDatabase } from './models/database.models.js';
 import { clerkAuth } from './middleware/auth.middleware.js';
 
 // Import routes
@@ -12,20 +11,6 @@ import paymentRoutes from './routes/payment.routes.js';
 dotenv.config();
 
 const app = express();
-
-// Initialize database once
-let dbInitialized = false;
-(async () => {
-  if (!dbInitialized) {
-    try {
-      await initializeDatabase();
-      dbInitialized = true;
-      console.log('✅ Database ready');
-    } catch (error) {
-      console.error('❌ Database init failed:', error);
-    }
-  }
-})();
 
 // CORS Configuration for Vercel
 app.use(cors({
@@ -63,19 +48,18 @@ app.get('/health', (req, res) => {
   res.status(200).json({ status: 'ok' });
 });
 
-// Body parser (EXCEPT for webhook)
+// Raw body for webhook ONLY
 app.use((req, res, next) => {
   if (req.path === '/api/payment/webhook') {
-    next();
+    express.raw({ type: 'application/json' })(req, res, next);
   } else {
-    express.json()(req, res, next);
+    next();
   }
 });
 
+// JSON body parser for all other routes
+app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
-
-// Stripe webhook with raw body
-app.use('/api/payment/webhook', express.raw({ type: 'application/json' }));
 
 // Clerk authentication middleware (skip for health checks)
 app.use(clerkAuth);
