@@ -24,11 +24,12 @@ app.use(cors({
 
 // Handle preflight requests FIRST (before any other middleware)
 app.options('*', (req, res) => {
-  res.header('Access-Control-Allow-Origin', req.headers.origin || '*');
+  res.header('Access-Control-Allow-Origin', req.headers.origin || 'https://cvonlinestripeclerk.netlify.app');
   res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
   res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
   res.header('Access-Control-Allow-Credentials', 'true');
-  res.status(200).end();
+  res.header('Access-Control-Max-Age', '86400');
+  return res.status(200).end();
 });
 
 // Health check endpoints (NO middleware needed)
@@ -61,13 +62,19 @@ app.use((req, res, next) => {
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Clerk authentication middleware (only for /api routes)
-app.use('/api', clerkAuth);
+// API routes with Clerk authentication
+const apiRouter = express.Router();
 
-// Routes
-app.use('/api/auth', authRoutes);
-app.use('/api/cvs', cvRoutes);
-app.use('/api/payment', paymentRoutes);
+// Apply Clerk to API router
+apiRouter.use(clerkAuth);
+
+// Mount API routes
+apiRouter.use('/auth', authRoutes);
+apiRouter.use('/cvs', cvRoutes);
+apiRouter.use('/payment', paymentRoutes);
+
+// Mount API router
+app.use('/api', apiRouter);
 
 // 404 handler
 app.use((req, res) => {
