@@ -1,0 +1,31 @@
+{
+  "name": "cvcreotor-server",
+  "version": "1.0.0",
+  "description": "CV Creator Server with NeonDB and Clerk Authentication",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "nodemon src/index.js"
+  },
+  "keywords": [
+    "cv",
+    "resume",
+    "stripe",
+    "clerk",
+    "neondb"
+  ],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@clerk/express": "^2.0.1",
+    "@neondatabase/serverless": "^0.9.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.3.1",
+    "express": "^4.18.2",
+    "stripe": "^14.12.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.3"
+  }
+}
