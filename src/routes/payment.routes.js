@@ -15,38 +15,61 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
  * Create a Stripe subscription checkout session
  */
 router.post('/create-subscription', async (req, res) => {
+  console.log('\n========================================');
+  console.log('💳 [SUBSCRIPTION] Create subscription request received');
+  console.log('========================================');
+  
   try {
     const { userId } = getAuth(req);
     
-    console.log('🔍 Create subscription request received');
-    console.log('👤 Clerk User ID from getAuth:', userId);
+    console.log('📋 [SUBSCRIPTION] Clerk User ID from getAuth:', userId || 'NONE');
+    console.log('🌐 [SUBSCRIPTION] Request origin:', req.headers.origin);
     
     if (!userId) {
-      console.log('❌ No userId - Unauthorized');
+      console.log('❌ [SUBSCRIPTION] No userId - Unauthorized');
       return res.status(401).json({ error: 'Unauthorized' });
     }
     
+    console.log('🔍 [SUBSCRIPTION] Checking if user exists in database...');
     let user = await getUserByClerkId(userId);
     
     // If user doesn't exist in DB, create them with real data from Clerk
     if (!user) {
-      console.log('⚠️ User not found in DB, fetching from Clerk and creating...');
+      console.log('⚠️ [SUBSCRIPTION] User not found in DB, fetching from Clerk...');
       
       // Get user info from Clerk
       const clerkUser = await clerkClient.users.getUser(userId);
-      console.log('📧 Clerk user email:', clerkUser.emailAddresses[0]?.emailAddress);
+      const clerkEmail = clerkUser.emailAddresses[0]?.emailAddress;
+      
+      console.log('📧 [SUBSCRIPTION] Clerk user data:', {
+        email: clerkEmail,
+        firstName: clerkUser.firstName,
+        lastName: clerkUser.lastName
+      });
       
       // Create user with real Clerk data
+      console.log('💾 [SUBSCRIPTION] Creating user in database...');
       user = await createUser(
         userId,
-        clerkUser.emailAddresses[0]?.emailAddress || 'no-email@example.com',
+        clerkEmail || 'no-email@example.com',
         clerkUser.firstName || 'User',
         clerkUser.lastName || ''
       );
-      console.log('✅ User created with real email:', user.email, 'ID:', user.id);
+      console.log('✅ [SUBSCRIPTION] User created successfully:', {
+        id: user.id,
+        email: user.email,
+        name: `${user.first_name} ${user.last_name}`
+      });
+    } else {
+      console.log('✅ [SUBSCRIPTION] User found in database:', {
+        id: user.id,
+        email: user.email,
+        has_premium: user.has_premium
+      });
     }
 
     if (!user) {
+      console.log('❌ [SUBSCRIPTION] User creation failed');
       return res.status(404).json({ error: 'User not found' });
     }
 
@@ -54,6 +77,7 @@ router.post('/create-subscription', async (req, res) => {
     let customerId = user.stripe_customer_id;
     
     if (!customerId) {
+      console.log('💳 [SUBSCRIPTION] No Stripe customer ID - creating new customer...');
       const customer = await stripe.customers.create({
         email: user.email,
         metadata: {
@@ -62,16 +86,22 @@ router.post('/create-subscription', async (req, res) => {
         }
       });
       customerId = customer.id;
+      console.log('✅ [SUBSCRIPTION] Stripe customer created:', customerId);
       
       // Update user with Stripe customer ID
+      console.log('💾 [SUBSCRIPTION] Saving Stripe customer ID to database...');
       await sql`
         UPDATE users 
         SET stripe_customer_id = ${customerId}
         WHERE id = ${user.id}
       `;
+      console.log('✅ [SUBSCRIPTION] Stripe customer ID saved');
+    } else {
+      console.log('✅ [SUBSCRIPTION] Using existing Stripe customer:', customerId);
     }
 
     // Create subscription checkout session
+    console.log('🛒 [SUBSCRIPTION] Creating Stripe checkout session...');
     const session = await stripe.checkout.sessions.create({
       customer: customerId,
       payment_method_types: ['card'],
@@ -99,9 +129,19 @@ router.post('/create-subscription', async (req, res) => {
       },
     });
 
+    console.log('✅ [SUBSCRIPTION] Checkout session created successfully');
+    console.log('📊 [SUBSCRIPTION] Session details:', {
+      sessionId: session.id,
+      customerId: session.customer,
+      url: session.url
+    });
+    console.log('========================================\n');
+
     res.status(200).json({ sessionId: session.id, url: session.url });
   } catch (error) {
-    console.error('Error creating subscription:', error);
+    console.error('❌ [SUBSCRIPTION] Error creating subscription:', error.message);
+    console.error('❌ [SUBSCRIPTION] Error stack:', error.stack);
+    console.log('========================================\n');
     res.status(500).json({ error: 'Failed to create subscription' });
   }
 });
@@ -111,29 +151,50 @@ router.post('/create-subscription', async (req, res) => {
  * Stripe webhook to handle subscription events
  */
 router.post('/webhook', express.raw({ type: 'application/json' }), async (req, res) => {
+  console.log('\n========================================');
+  console.log('🪝 [WEBHOOK] Stripe webhook received');
+  console.log('========================================');
+  
   const sig = req.headers['stripe-signature'];
+  console.log('📋 [WEBHOOK] Signature present:', sig ? 'YES' : 'NO');
 
   let event;
 
   try {
+    console.log('🔐 [WEBHOOK] Verifying webhook signature...');
     event = stripe.webhooks.constructEvent(
       req.body,
       sig,
       process.env.STRIPE_WEBHOOK_SECRET
     );
+    console.log('✅ [WEBHOOK] Signature verified successfully');
+    console.log('📊 [WEBHOOK] Event type:', event.type);
   } catch (err) {
-    console.error('Webhook signature verification failed:', err.message);
+    console.error('❌ [WEBHOOK] Signature verification failed:', err.message);
+    console.log('========================================\n');
     return res.status(400).send(`Webhook Error: ${err.message}`);
   }
 
   // Handle the event
+  console.log('🔄 [WEBHOOK] Processing event:', event.type);
+  
   switch (event.type) {
     case 'checkout.session.completed':
+      console.log('💰 [WEBHOOK] Checkout session completed');
       const session = event.data.object;
+      
+      console.log('📊 [WEBHOOK] Session data:', {
+        mode: session.mode,
+        customer: session.customer,
+        subscription: session.subscription,
+        payment_intent: session.payment_intent
+      });
       
       if (session.mode === 'subscription') {
         const customerId = session.customer;
         const subscriptionId = session.subscription;
+        
+        console.log('🔍 [WEBHOOK] Looking up user by Stripe customer ID:', customerId);
         
         // Get user by customer ID
         const users = await sql`
@@ -142,6 +203,12 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
         
         if (users.length > 0) {
           const userId = users[0].id;
+          console.log('✅ [WEBHOOK] User found:', {
+            userId,
+            email: users[0].email
+          });
+          
+          console.log('💾 [WEBHOOK] Updating user subscription status...');
           
           // Update user subscription status
           await sql`
@@ -154,19 +221,32 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
             WHERE id = ${userId}
           `;
           
+          console.log('✅ [WEBHOOK] User subscription status updated');
+          
           // Record payment
+          console.log('💾 [WEBHOOK] Recording payment in database...');
           await sql`
             INSERT INTO payments (user_id, stripe_payment_id, amount, currency, status)
             VALUES (${userId}, ${session.payment_intent || subscriptionId}, 999, 'usd', 'completed')
           `;
           
-          console.log('Subscription activated for user:', userId);
+          console.log('✅ [WEBHOOK] Payment recorded');
+          console.log('🎉 [WEBHOOK] Subscription activated for user:', userId);
+        } else {
+          console.log('⚠️ [WEBHOOK] No user found with Stripe customer ID:', customerId);
         }
       }
       break;
 
     case 'customer.subscription.updated':
+      console.log('🔄 [WEBHOOK] Subscription updated');
       const subscription = event.data.object;
+      
+      console.log('📊 [WEBHOOK] Subscription data:', {
+        id: subscription.id,
+        status: subscription.status
+      });
+      
       await sql`
         UPDATE users 
         SET 
@@ -174,11 +254,15 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
           updated_at = CURRENT_TIMESTAMP
         WHERE stripe_subscription_id = ${subscription.id}
       `;
-      console.log('Subscription updated:', subscription.id);
+      console.log('✅ [WEBHOOK] Subscription status updated:', subscription.id);
       break;
 
     case 'customer.subscription.deleted':
+      console.log('❌ [WEBHOOK] Subscription deleted/cancelled');
       const deletedSub = event.data.object;
+      
+      console.log('📊 [WEBHOOK] Cancelled subscription:', deletedSub.id);
+      
       await sql`
         UPDATE users 
         SET 
@@ -187,23 +271,28 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
           updated_at = CURRENT_TIMESTAMP
         WHERE stripe_subscription_id = ${deletedSub.id}
       `;
-      console.log('Subscription cancelled:', deletedSub.id);
+      console.log('✅ [WEBHOOK] User premium status revoked');
       break;
 
     case 'invoice.payment_failed':
+      console.log('⚠️ [WEBHOOK] Payment failed');
       const invoice = event.data.object;
+      
+      console.log('📊 [WEBHOOK] Failed payment for customer:', invoice.customer);
+      
       await sql`
         UPDATE users 
         SET subscription_status = 'past_due'
         WHERE stripe_customer_id = ${invoice.customer}
       `;
-      console.log('Payment failed for customer:', invoice.customer);
+      console.log('✅ [WEBHOOK] User status updated to past_due');
       break;
 
     default:
-      console.log(`Unhandled event type ${event.type}`);
+      console.log(`ℹ️ [WEBHOOK] Unhandled event type: ${event.type}`);
   }
 
+  console.log('========================================\n');
   res.json({ received: true });
 });
 
@@ -212,23 +301,42 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
  * Get user's subscription status
  */
 router.get('/subscription-status', async (req, res) => {
+  console.log('\n========================================');
+  console.log('📊 [SUBSCRIPTION STATUS] Request received');
+  console.log('========================================');
+  
   try {
     const { userId } = getAuth(req);
+    console.log('📋 [SUBSCRIPTION STATUS] Clerk User ID:', userId || 'NONE');
     
     if (!userId) {
+      console.log('❌ [SUBSCRIPTION STATUS] No userId - Unauthorized');
       return res.status(401).json({ error: 'Unauthorized' });
     }
     
+    console.log('🔍 [SUBSCRIPTION STATUS] Looking up user in database...');
     const user = await getUserByClerkId(userId);
 
     if (!user) {
+      console.log('❌ [SUBSCRIPTION STATUS] User not found in database');
+      console.log('========================================\n');
       return res.status(404).json({ error: 'User not found' });
     }
+
+    console.log('✅ [SUBSCRIPTION STATUS] User found:', {
+      id: user.id,
+      email: user.email,
+      has_premium: user.has_premium,
+      subscription_status: user.subscription_status
+    });
 
     let subscriptionDetails = null;
 
     // If user has a subscription, get details from Stripe
     if (user.stripe_subscription_id) {
+      console.log('🔍 [SUBSCRIPTION STATUS] Fetching subscription details from Stripe...');
+      console.log('📋 [SUBSCRIPTION STATUS] Subscription ID:', user.stripe_subscription_id);
+      
       try {
         const subscription = await stripe.subscriptions.retrieve(user.stripe_subscription_id);
         subscriptionDetails = {
@@ -236,19 +344,29 @@ router.get('/subscription-status', async (req, res) => {
           currentPeriodEnd: new Date(subscription.current_period_end * 1000),
           cancelAtPeriodEnd: subscription.cancel_at_period_end,
         };
+        console.log('✅ [SUBSCRIPTION STATUS] Stripe subscription details:', subscriptionDetails);
       } catch (err) {
-        console.error('Error fetching subscription:', err);
+        console.error('❌ [SUBSCRIPTION STATUS] Error fetching Stripe subscription:', err.message);
       }
+    } else {
+      console.log('ℹ️ [SUBSCRIPTION STATUS] User has no active subscription');
     }
 
-    res.status(200).json({ 
+    const response = { 
       hasPremium: user.has_premium,
       subscriptionStatus: user.subscription_status,
       subscriptionDetails,
       stripeCustomerId: user.stripe_customer_id 
-    });
+    };
+    
+    console.log('📤 [SUBSCRIPTION STATUS] Sending response:', response);
+    console.log('========================================\n');
+
+    res.status(200).json(response);
   } catch (error) {
-    console.error('Error getting subscription status:', error);
+    console.error('❌ [SUBSCRIPTION STATUS] Error:', error.message);
+    console.error('❌ [SUBSCRIPTION STATUS] Stack:', error.stack);
+    console.log('========================================\n');
     res.status(500).json({ error: 'Failed to get subscription status' });
   }
 });

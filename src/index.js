@@ -12,8 +12,21 @@ dotenv.config();
 const app = express();
 
 // Initialize database tables on startup
+console.log('\n🚀 [SERVER] Starting CV Creator Backend...');
+console.log('🌍 [SERVER] Environment:', process.env.NODE_ENV || 'development');
+console.log('📍 [SERVER] Database URL configured:', process.env.DATABASE_URL ? 'YES ✅' : 'NO ❌');
+console.log('🔐 [SERVER] Clerk keys configured:', {
+  publishable: process.env.CLERK_PUBLISHABLE_KEY ? 'YES ✅' : 'NO ❌',
+  secret: process.env.CLERK_SECRET_KEY ? 'YES ✅' : 'NO ❌'
+});
+console.log('💳 [SERVER] Stripe keys configured:', {
+  secret: process.env.STRIPE_SECRET_KEY ? 'YES ✅' : 'NO ❌',
+  publishable: process.env.STRIPE_PUBLISHABLE_KEY ? 'YES ✅' : 'NO ❌',
+  webhook: process.env.STRIPE_WEBHOOK_SECRET ? 'YES ✅' : 'NO ❌'
+});
+
 initializeDatabase().catch(err => {
-  console.error('Failed to initialize database:', err);
+  console.error('❌ [SERVER] Failed to initialize database:', err);
 });
 
 // CORS configuration - must be FIRST
@@ -85,10 +98,17 @@ app.get('/health', async (req, res) => {
 
 // Clerk auth for API routes only (after OPTIONS handling)
 app.use('/api', (req, res, next) => {
+  console.log(`🔐 [AUTH MIDDLEWARE] ${req.method} ${req.path}`);
+  console.log('📋 [AUTH MIDDLEWARE] Origin:', req.headers.origin);
+  
   // Skip Clerk for OPTIONS requests
   if (req.method === 'OPTIONS') {
+    console.log('✅ [AUTH MIDDLEWARE] OPTIONS request - skipping authentication');
     return next();
   }
+  
+  console.log('🔍 [AUTH MIDDLEWARE] Checking Clerk authentication...');
+  
   return clerkMiddleware({
     publishableKey: process.env.CLERK_PUBLISHABLE_KEY,
     secretKey: process.env.CLERK_SECRET_KEY
@@ -113,8 +133,14 @@ app.use((err, req, res, next) => {
 const PORT = process.env.PORT || 3000;
 if (process.env.NODE_ENV !== 'production') {
   app.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
+    console.log('\n========================================');
+    console.log(`✅ [SERVER] Server running on port ${PORT}`);
+    console.log(`🌐 [SERVER] Local URL: http://localhost:${PORT}`);
+    console.log(`📋 [SERVER] Health check: http://localhost:${PORT}/health`);
+    console.log('========================================\n');
   });
+} else {
+  console.log('✅ [SERVER] Running in production mode (serverless)');
 }
 
 export default app;
