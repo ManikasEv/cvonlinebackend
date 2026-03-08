@@ -13,6 +13,20 @@ dotenv.config();
 
 const app = express();
 
+// Initialize database once
+let dbInitialized = false;
+(async () => {
+  if (!dbInitialized) {
+    try {
+      await initializeDatabase();
+      dbInitialized = true;
+      console.log('✅ Database ready');
+    } catch (error) {
+      console.error('❌ Database init failed:', error);
+    }
+  }
+})();
+
 // CORS Configuration for Vercel
 app.use(cors({
   origin: ['https://cvonlinestripeclerk.netlify.app', 'http://localhost:5173'],
@@ -23,43 +37,48 @@ app.use(cors({
   maxAge: 86400 // 24 hours
 }));
 
-// Handle preflight requests explicitly
-app.options('*', cors());
-
-// Special handling for Stripe webhook (needs raw body)
-app.use('/api/payment/webhook', express.raw({ type: 'application/json' }));
-
-// Body parser for other routes
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
-
-// Initialize database (for serverless, this happens on each request)
-let dbInitialized = false;
-app.use(async (req, res, next) => {
-  if (!dbInitialized) {
-    try {
-      console.log('🔄 Initializing database...');
-      await initializeDatabase();
-      dbInitialized = true;
-      console.log('✅ Database initialized');
-    } catch (error) {
-      console.error('❌ Database initialization failed:', error);
-    }
-  }
-  next();
+// Handle preflight requests FIRST (before any other middleware)
+app.options('*', (req, res) => {
+  res.header('Access-Control-Allow-Origin', req.headers.origin || '*');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  res.header('Access-Control-Allow-Credentials', 'true');
+  res.status(200).end();
 });
 
-// Clerk authentication middleware
-app.use(clerkAuth);
-
-// Health check endpoint (before auth)
+// Health check endpoints (NO middleware needed)
 app.get('/', (req, res) => {
-  res.status(200).json({ status: 'ok', message: 'CV Creator API is running' });
+  res.status(200).json({ 
+    status: '✅ Connected', 
+    message: 'CV Creator API - Ready to serve',
+    endpoints: {
+      auth: '/api/auth/*',
+      cvs: '/api/cvs/*',
+      payment: '/api/payment/*'
+    }
+  });
 });
 
 app.get('/health', (req, res) => {
-  res.status(200).json({ status: 'ok', message: 'Server is running' });
+  res.status(200).json({ status: 'ok' });
 });
+
+// Body parser (EXCEPT for webhook)
+app.use((req, res, next) => {
+  if (req.path === '/api/payment/webhook') {
+    next();
+  } else {
+    express.json()(req, res, next);
+  }
+});
+
+app.use(express.urlencoded({ extended: true }));
+
+// Stripe webhook with raw body
+app.use('/api/payment/webhook', express.raw({ type: 'application/json' }));
+
+// Clerk authentication middleware (skip for health checks)
+app.use(clerkAuth);
 
 // Routes
 app.use('/api/auth', authRoutes);
