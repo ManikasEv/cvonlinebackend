@@ -72,8 +72,11 @@ app.use(express.urlencoded({ extended: true }));
 
 app.get('/', (req, res) => {
   res.status(200).json({
+    message: 'Hello World! 🌍',
     status: 'Connected',
-    message: 'API Ready'
+    timestamp: new Date().toISOString(),
+    api: 'CV Creator Backend',
+    version: '1.0.0'
   });
 });
 
