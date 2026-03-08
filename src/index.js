@@ -61,8 +61,8 @@ app.use((req, res, next) => {
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Clerk authentication middleware (skip for health checks)
-app.use(clerkAuth);
+// Clerk authentication middleware (only for /api routes)
+app.use('/api', clerkAuth);
 
 // Routes
 app.use('/api/auth', authRoutes);
