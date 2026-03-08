@@ -68,13 +68,13 @@ app.options('*', (req, res) => {
 });
 
 // Parse JSON for all routes EXCEPT webhook
-app.use((req, res, next) => {
-  if (req.originalUrl === '/api/payment/webhook') {
-    next();
-  } else {
-    express.json()(req, res, next);
+app.use(express.json({
+  verify: (req, res, buf) => {
+    if (req.originalUrl.includes('/webhook')) {
+      req.rawBody = buf.toString('utf8');
+    }
   }
-});
+}));
 app.use(express.urlencoded({ extended: true }));
 
 app.get('/', (req, res) => {

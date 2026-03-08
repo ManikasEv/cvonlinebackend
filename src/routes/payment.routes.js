@@ -150,10 +150,9 @@ router.post('/create-subscription', async (req, res) => {
  * POST /api/payment/webhook
  * Stripe webhook to handle subscription events
  */
-router.post('/webhook', express.raw({ type: 'application/json' }), async (req, res) => {
+router.post('/webhook', async (req, res) => {
   console.log('\n========================================');
   console.log('🪝 [WEBHOOK] Stripe webhook received');
-  console.log('📊 [WEBHOOK] Body type:', typeof req.body, '- Is Buffer:', Buffer.isBuffer(req.body));
   console.log('========================================');
   
   const sig = req.headers['stripe-signature'];
@@ -164,8 +163,13 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
   try {
     console.log('🔐 [WEBHOOK] Verifying webhook signature...');
     console.log('🔑 [WEBHOOK] Webhook secret configured:', process.env.STRIPE_WEBHOOK_SECRET ? 'YES (starts with ' + process.env.STRIPE_WEBHOOK_SECRET.substring(0, 10) + '...)' : 'NO - MISSING!');
+    
+    // Use rawBody if available, otherwise use req.body
+    const body = req.rawBody || JSON.stringify(req.body);
+    console.log('📊 [WEBHOOK] Body type:', typeof body);
+    
     event = stripe.webhooks.constructEvent(
-      req.body,
+      body,
       sig,
       process.env.STRIPE_WEBHOOK_SECRET
     );
