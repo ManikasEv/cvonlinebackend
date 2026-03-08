@@ -10,13 +10,22 @@ dotenv.config();
 
 const app = express();
 
-app.use(cors({
-  origin: true,
+const corsOptions = {
+  origin: [
+    'https://cvonlinestripeclerk.netlify.app',
+    'http://localhost:5173',
+    'http://localhost:3000'
+  ],
   credentials: true,
-}));
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+  optionsSuccessStatus: 200
+};
 
-// OPTIONS for preflight
-app.options('*', cors());
+app.use(cors(corsOptions));
+
+// Handle preflight for ALL routes BEFORE other middleware
+app.options('*', cors(corsOptions));
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
@@ -32,11 +41,17 @@ app.get('/health', (req, res) => {
   res.status(200).json({ status: 'ok' });
 });
 
-// Clerk auth for API routes only
-app.use('/api', clerkMiddleware({
-  publishableKey: process.env.CLERK_PUBLISHABLE_KEY,
-  secretKey: process.env.CLERK_SECRET_KEY
-}));
+// Clerk auth for API routes only (after OPTIONS handling)
+app.use('/api', (req, res, next) => {
+  // Skip Clerk for OPTIONS requests
+  if (req.method === 'OPTIONS') {
+    return next();
+  }
+  return clerkMiddleware({
+    publishableKey: process.env.CLERK_PUBLISHABLE_KEY,
+    secretKey: process.env.CLERK_SECRET_KEY
+  })(req, res, next);
+});
 
 // API routes
 app.use('/api/auth', authRoutes);
@@ -51,5 +66,13 @@ app.use((err, req, res, next) => {
   console.error('Server error:', err);
   res.status(500).json({ error: 'Internal server error', message: err.message });
 });
+
+// For local development
+const PORT = process.env.PORT || 3000;
+if (process.env.NODE_ENV !== 'production') {
+  app.listen(PORT, () => {
+    console.log(`Server running on port ${PORT}`);
+  });
+}
 
 export default app;
