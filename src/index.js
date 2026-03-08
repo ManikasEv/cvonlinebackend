@@ -71,7 +71,7 @@ app.options('*', (req, res) => {
 app.use(express.json({
   verify: (req, res, buf) => {
     if (req.originalUrl.includes('/webhook')) {
-      req.rawBody = buf.toString('utf8');
+      req.rawBody = buf; // Keep as Buffer, not string!
     }
   }
 }));
