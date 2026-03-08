@@ -10,24 +10,11 @@ dotenv.config();
 const router = express.Router();
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
-// Handle OPTIONS preflight for all payment routes
-router.options('*', (req, res) => {
-  res.header('Access-Control-Allow-Credentials', 'true');
-  res.header('Access-Control-Allow-Origin', req.headers.origin || 'https://cvonlinestripeclerk.netlify.app');
-  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS, PATCH');
-  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
-  res.status(200).send();
-});
-
 /**
  * POST /api/payment/create-subscription
  * Create a Stripe subscription checkout session
  */
 router.post('/create-subscription', async (req, res) => {
-  // Ensure CORS headers are set
-  res.header('Access-Control-Allow-Credentials', 'true');
-  res.header('Access-Control-Allow-Origin', req.headers.origin || 'https://cvonlinestripeclerk.netlify.app');
-  
   try {
     const { userId } = getAuth(req);
     
