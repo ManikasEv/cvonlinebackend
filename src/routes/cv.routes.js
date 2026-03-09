@@ -80,10 +80,37 @@ router.post('/', async (req, res) => {
     }
     
     const user = await getUserByClerkId(userId);
-    const { title, templateType, personalInfo, education, experience, skills, languages, certifications, projects } = req.body;
+    const { 
+      title, 
+      templateType, 
+      personalInfo, 
+      education, 
+      experience, 
+      skills, 
+      languages, 
+      certifications, 
+      projects,
+      profilePictureUrl,
+      drivingLicense,
+      attachments
+    } = req.body;
 
     const newCV = await sql`
-      INSERT INTO cvs (user_id, title, template_type, personal_info, education, experience, skills, languages, certifications, projects)
+      INSERT INTO cvs (
+        user_id, 
+        title, 
+        template_type, 
+        personal_info, 
+        education, 
+        experience, 
+        skills, 
+        languages, 
+        certifications, 
+        projects,
+        profile_picture_url,
+        driving_license,
+        attachments
+      )
       VALUES (
         ${user.id}, 
         ${title}, 
@@ -94,7 +121,10 @@ router.post('/', async (req, res) => {
         ${JSON.stringify(skills || [])},
         ${JSON.stringify(languages || [])},
         ${JSON.stringify(certifications || [])},
-        ${JSON.stringify(projects || [])}
+        ${JSON.stringify(projects || [])},
+        ${profilePictureUrl || null},
+        ${JSON.stringify(drivingLicense || { has_license: false, categories: [] })},
+        ${JSON.stringify(attachments || [])}
       )
       RETURNING *
     `;
@@ -123,7 +153,20 @@ router.put('/:id', async (req, res) => {
     
     const user = await getUserByClerkId(userId);
     const cvId = req.params.id;
-    const { title, templateType, personalInfo, education, experience, skills, languages, certifications, projects } = req.body;
+    const { 
+      title, 
+      templateType, 
+      personalInfo, 
+      education, 
+      experience, 
+      skills, 
+      languages, 
+      certifications, 
+      projects,
+      profilePictureUrl,
+      drivingLicense,
+      attachments
+    } = req.body;
 
     const updatedCV = await sql`
       UPDATE cvs 
@@ -137,6 +180,9 @@ router.put('/:id', async (req, res) => {
         languages = ${JSON.stringify(languages)},
         certifications = ${JSON.stringify(certifications)},
         projects = ${JSON.stringify(projects)},
+        profile_picture_url = ${profilePictureUrl || null},
+        driving_license = ${JSON.stringify(drivingLicense || { has_license: false, categories: [] })},
+        attachments = ${JSON.stringify(attachments || [])},
         updated_at = CURRENT_TIMESTAMP
       WHERE id = ${cvId} AND user_id = ${user.id}
       RETURNING *
