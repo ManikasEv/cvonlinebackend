@@ -164,14 +164,15 @@ router.post('/webhook', async (req, res) => {
     console.log('🔐 [WEBHOOK] Verifying webhook signature...');
     console.log('🔑 [WEBHOOK] Webhook secret configured:', process.env.STRIPE_WEBHOOK_SECRET ? 'YES (starts with ' + process.env.STRIPE_WEBHOOK_SECRET.substring(0, 10) + '...)' : 'NO - MISSING!');
     
-    // MUST use rawBody for signature verification
-    const body = req.rawBody;
-    console.log('📊 [WEBHOOK] Using rawBody:', !!body, '- Type:', typeof body);
+    // For raw body parser, req.body will be a Buffer
+    const body = req.body;
+    console.log('📊 [WEBHOOK] Body received:', !!body, '- Type:', typeof body, '- Is Buffer:', Buffer.isBuffer(body));
     
     if (!body) {
-      throw new Error('No raw body available for webhook verification');
+      throw new Error('No body available for webhook verification');
     }
     
+    // Stripe's constructEvent accepts Buffer directly
     event = stripe.webhooks.constructEvent(
       body,
       sig,

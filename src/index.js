@@ -68,13 +68,17 @@ app.options('*', (req, res) => {
 });
 
 // Parse JSON for all routes EXCEPT webhook
-app.use(express.json({
-  verify: (req, res, buf) => {
-    if (req.originalUrl.includes('/webhook')) {
-      req.rawBody = buf; // Keep as Buffer, not string!
-    }
+// Stripe webhook needs raw body BEFORE any parsing
+app.use((req, res, next) => {
+  if (req.originalUrl.includes('/webhook')) {
+    // For Stripe webhook, use raw body parser
+    express.raw({ type: 'application/json' })(req, res, next);
+  } else {
+    next();
   }
-}));
+});
+
+app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 app.get('/', (req, res) => {
