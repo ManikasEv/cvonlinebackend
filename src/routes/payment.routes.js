@@ -189,122 +189,153 @@ router.post('/webhook', async (req, res) => {
   // Handle the event
   console.log('🔄 [WEBHOOK] Processing event:', event.type);
   
-  switch (event.type) {
-    case 'checkout.session.completed':
-      console.log('💰 [WEBHOOK] Checkout session completed');
-      const session = event.data.object;
-      
-      console.log('📊 [WEBHOOK] Session data:', {
-        mode: session.mode,
-        customer: session.customer,
-        subscription: session.subscription,
-        payment_intent: session.payment_intent
-      });
-      
-      if (session.mode === 'subscription') {
-        const customerId = session.customer;
-        const subscriptionId = session.subscription;
+  try {
+    switch (event.type) {
+      case 'checkout.session.completed':
+        console.log('💰 [WEBHOOK] Checkout session completed');
+        const session = event.data.object;
         
-        console.log('🔍 [WEBHOOK] Looking up user by Stripe customer ID:', customerId);
+        console.log('📊 [WEBHOOK] Session data:', {
+          mode: session.mode,
+          customer: session.customer,
+          subscription: session.subscription,
+          payment_intent: session.payment_intent
+        });
         
-        // Get user by customer ID
-        const users = await sql`
-          SELECT * FROM users WHERE stripe_customer_id = ${customerId}
-        `;
-        
-        if (users.length > 0) {
-          const userId = users[0].id;
-          console.log('✅ [WEBHOOK] User found:', {
-            userId,
-            email: users[0].email
-          });
+        if (session.mode === 'subscription') {
+          const customerId = session.customer;
+          const subscriptionId = session.subscription;
           
-          console.log('💾 [WEBHOOK] Updating user subscription status...');
+          console.log('🔍 [WEBHOOK] Looking up user by Stripe customer ID:', customerId);
           
-          // Update user subscription status
-          await sql`
-            UPDATE users 
-            SET 
-              has_premium = true,
-              stripe_subscription_id = ${subscriptionId},
-              subscription_status = 'active',
-              updated_at = CURRENT_TIMESTAMP
-            WHERE id = ${userId}
+          // Get user by customer ID
+          const users = await sql`
+            SELECT * FROM users WHERE stripe_customer_id = ${customerId}
           `;
           
-          console.log('✅ [WEBHOOK] User subscription status updated');
-          
-          // Record payment
-          console.log('💾 [WEBHOOK] Recording payment in database...');
-          await sql`
-            INSERT INTO payments (user_id, stripe_payment_id, amount, currency, status)
-            VALUES (${userId}, ${session.payment_intent || subscriptionId}, 999, 'usd', 'completed')
-          `;
-          
-          console.log('✅ [WEBHOOK] Payment recorded');
-          console.log('🎉 [WEBHOOK] Subscription activated for user:', userId);
-        } else {
-          console.log('⚠️ [WEBHOOK] No user found with Stripe customer ID:', customerId);
+          if (users.length > 0) {
+            const userId = users[0].id;
+            console.log('✅ [WEBHOOK] User found:', {
+              userId,
+              email: users[0].email
+            });
+            
+            console.log('💾 [WEBHOOK] Updating user subscription status...');
+            
+            // Update user subscription status
+            const updateResult = await sql`
+              UPDATE users 
+              SET 
+                has_premium = true,
+                stripe_subscription_id = ${subscriptionId},
+                subscription_status = 'active',
+                updated_at = CURRENT_TIMESTAMP
+              WHERE id = ${userId}
+              RETURNING *
+            `;
+            
+            console.log('✅ [WEBHOOK] User subscription status updated');
+            console.log('📊 [WEBHOOK] Updated user data:', {
+              id: updateResult[0]?.id,
+              has_premium: updateResult[0]?.has_premium,
+              subscription_status: updateResult[0]?.subscription_status
+            });
+            
+            // Record payment
+            console.log('💾 [WEBHOOK] Recording payment in database...');
+            try {
+              await sql`
+                INSERT INTO payments (user_id, stripe_payment_id, amount, currency, status)
+                VALUES (${userId}, ${session.payment_intent || subscriptionId}, 999, 'usd', 'completed')
+              `;
+              console.log('✅ [WEBHOOK] Payment recorded');
+            } catch (paymentError) {
+              // If payment already exists (duplicate), just log it and continue
+              if (paymentError.code === '23505') {
+                console.log('⚠️ [WEBHOOK] Payment already recorded (duplicate), continuing...');
+              } else {
+                throw paymentError;
+              }
+            }
+            
+            console.log('🎉 [WEBHOOK] Subscription activated for user:', userId);
+          } else {
+            console.log('⚠️ [WEBHOOK] No user found with Stripe customer ID:', customerId);
+            console.log('⚠️ [WEBHOOK] This might be because the user checkout was created but user not yet in DB');
+          }
         }
-      }
-      break;
+        break;
 
-    case 'customer.subscription.updated':
-      console.log('🔄 [WEBHOOK] Subscription updated');
-      const subscription = event.data.object;
-      
-      console.log('📊 [WEBHOOK] Subscription data:', {
-        id: subscription.id,
-        status: subscription.status
-      });
-      
-      await sql`
-        UPDATE users 
-        SET 
-          subscription_status = ${subscription.status},
-          updated_at = CURRENT_TIMESTAMP
-        WHERE stripe_subscription_id = ${subscription.id}
-      `;
-      console.log('✅ [WEBHOOK] Subscription status updated:', subscription.id);
-      break;
+      case 'customer.subscription.updated':
+        console.log('🔄 [WEBHOOK] Subscription updated');
+        const subscription = event.data.object;
+        
+        console.log('📊 [WEBHOOK] Subscription data:', {
+          id: subscription.id,
+          status: subscription.status
+        });
+        
+        await sql`
+          UPDATE users 
+          SET 
+            subscription_status = ${subscription.status},
+            updated_at = CURRENT_TIMESTAMP
+          WHERE stripe_subscription_id = ${subscription.id}
+        `;
+        console.log('✅ [WEBHOOK] Subscription status updated:', subscription.id);
+        break;
 
-    case 'customer.subscription.deleted':
-      console.log('❌ [WEBHOOK] Subscription deleted/cancelled');
-      const deletedSub = event.data.object;
-      
-      console.log('📊 [WEBHOOK] Cancelled subscription:', deletedSub.id);
-      
-      await sql`
-        UPDATE users 
-        SET 
-          has_premium = false,
-          subscription_status = 'cancelled',
-          updated_at = CURRENT_TIMESTAMP
-        WHERE stripe_subscription_id = ${deletedSub.id}
-      `;
-      console.log('✅ [WEBHOOK] User premium status revoked');
-      break;
+      case 'customer.subscription.deleted':
+        console.log('❌ [WEBHOOK] Subscription deleted/cancelled');
+        const deletedSub = event.data.object;
+        
+        console.log('📊 [WEBHOOK] Cancelled subscription:', deletedSub.id);
+        
+        await sql`
+          UPDATE users 
+          SET 
+            has_premium = false,
+            subscription_status = 'cancelled',
+            updated_at = CURRENT_TIMESTAMP
+          WHERE stripe_subscription_id = ${deletedSub.id}
+        `;
+        console.log('✅ [WEBHOOK] User premium status revoked');
+        break;
 
-    case 'invoice.payment_failed':
-      console.log('⚠️ [WEBHOOK] Payment failed');
-      const invoice = event.data.object;
-      
-      console.log('📊 [WEBHOOK] Failed payment for customer:', invoice.customer);
-      
-      await sql`
-        UPDATE users 
-        SET subscription_status = 'past_due'
-        WHERE stripe_customer_id = ${invoice.customer}
-      `;
-      console.log('✅ [WEBHOOK] User status updated to past_due');
-      break;
+      case 'invoice.payment_failed':
+        console.log('⚠️ [WEBHOOK] Payment failed');
+        const invoice = event.data.object;
+        
+        console.log('📊 [WEBHOOK] Failed payment for customer:', invoice.customer);
+        
+        await sql`
+          UPDATE users 
+          SET subscription_status = 'past_due'
+          WHERE stripe_customer_id = ${invoice.customer}
+        `;
+        console.log('✅ [WEBHOOK] User status updated to past_due');
+        break;
 
-    default:
-      console.log(`ℹ️ [WEBHOOK] Unhandled event type: ${event.type}`);
+      default:
+        console.log(`ℹ️ [WEBHOOK] Unhandled event type: ${event.type}`);
+    }
+
+    console.log('========================================\n');
+    res.json({ received: true });
+  } catch (error) {
+    console.error('❌ [WEBHOOK] Error processing webhook event:', error.message);
+    console.error('❌ [WEBHOOK] Error code:', error.code);
+    console.error('❌ [WEBHOOK] Error detail:', error.detail);
+    console.error('❌ [WEBHOOK] Full error:', error);
+    console.log('========================================\n');
+    
+    // Still return 200 to Stripe so it doesn't retry
+    // But log the error so we can debug
+    res.status(500).json({ 
+      error: 'Webhook processing failed', 
+      message: error.message 
+    });
   }
-
-  console.log('========================================\n');
-  res.json({ received: true });
 });
 
 /**
@@ -379,6 +410,45 @@ router.get('/subscription-status', async (req, res) => {
     console.error('❌ [SUBSCRIPTION STATUS] Stack:', error.stack);
     console.log('========================================\n');
     res.status(500).json({ error: 'Failed to get subscription status' });
+  }
+});
+
+/**
+ * GET /api/payment/debug-tables
+ * Debug endpoint to check table structure (REMOVE IN PRODUCTION!)
+ */
+router.get('/debug-tables', async (req, res) => {
+  try {
+    // Check users table structure
+    const usersColumns = await sql`
+      SELECT column_name, data_type 
+      FROM information_schema.columns 
+      WHERE table_name = 'users'
+      ORDER BY ordinal_position
+    `;
+    
+    // Check payments table structure
+    const paymentsColumns = await sql`
+      SELECT column_name, data_type 
+      FROM information_schema.columns 
+      WHERE table_name = 'payments'
+      ORDER BY ordinal_position
+    `;
+    
+    // Get sample user data
+    const sampleUsers = await sql`
+      SELECT id, clerk_user_id, email, has_premium, stripe_customer_id, stripe_subscription_id, subscription_status
+      FROM users
+      LIMIT 5
+    `;
+    
+    res.json({
+      usersTableColumns: usersColumns,
+      paymentsTableColumns: paymentsColumns,
+      sampleUsers: sampleUsers
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
   }
 });
 
